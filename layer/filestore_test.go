@@ -114,5 +114,106 @@ func TestFileMetadataStore_StartTransaction(t *testing.T) {
 	}
 	defer tx.Cancel()
 
-	// TODO: Check that cache ID is persisted.
+	txData, err := fms.ListExistingTransactions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(txData) != 1 {
+		t.Errorf("Expected single transaction")
+	} else {
+		cacheID, err := txData[0].GetCacheID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cacheID != "test-start-transaction" {
+			t.Errorf("Unexpected cache ID in the started transaction: %s", cacheID)
+		}
+	}
+}
+
+func TestFileMetadataStore_ListExistingTransactions(t *testing.T) {
+	fms, _, cleanup := newFileMetadataStore(t)
+	defer cleanup()
+
+	t.Run("no tmp directory", func(t *testing.T) {
+		list, err := fms.ListExistingTransactions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 0 {
+			t.Errorf("Existing transactions returned when unexpected: %s", list)
+		}
+	})
+
+	t.Run("new transactions case", func(t *testing.T) {
+		tx1, err := fms.StartTransaction("1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx1.Cancel()
+		tx2, err := fms.StartTransaction("2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx2.Cancel()
+		list, err := fms.ListExistingTransactions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 2 {
+			t.Errorf("Expected 2 existing transactions, but got %d", len(list))
+		}
+
+		tx1.Commit(randomLayerID(42))
+		list, err = fms.ListExistingTransactions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 1 {
+			t.Errorf("Expected 1 existing transaction after comitting another, but got %d", len(list))
+		} else {
+			if cacheID, err := list[0].GetCacheID(); err != nil {
+				t.Fatal(err)
+			} else if cacheID != "2" {
+				t.Errorf("Wrong cache ID of the only existing transaction: %s", cacheID)
+			}
+		}
+
+		tx2.Cancel()
+		list, err = fms.ListExistingTransactions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 0 {
+			t.Errorf("Expected none existing transactions, but got %d", len(list))
+		}
+	})
+
+	t.Run("clean up case", func(t *testing.T) {
+		tx1, err := fms.StartTransaction(stringid.GenerateRandomID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx1.Cancel()
+
+		list, err := fms.ListExistingTransactions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) == 1 {
+			err = list[0].Delete()
+			if err != nil {
+				t.Fatal(err)
+			}
+			newlist, err := fms.ListExistingTransactions()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(newlist) != 0 {
+				t.Errorf("Unexpected transactions data: %s", newlist)
+			}
+		} else {
+			t.Errorf("Expected only one transaction, but got %s", list)
+		}
+	})
 }
