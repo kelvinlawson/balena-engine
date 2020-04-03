@@ -9,8 +9,8 @@ import (
 
 	"github.com/docker/distribution"
 	"github.com/docker/docker/daemon/graphdriver"
-	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/locker"
 	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/docker/docker/pkg/stringid"
@@ -321,12 +321,14 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		descriptor:     descriptor,
 	}
 
-	if err = ls.driver.Create(layer.cacheID, pid, nil); err != nil {
+	// New transaction should be persisted before we do any operations with the graph driver
+	// to avoid a possibility of having an FS layer not referenced from the layer store.
+	tx, err := ls.store.StartTransaction(layer.cacheID)
+	if err != nil {
 		return nil, err
 	}
 
-	tx, err := ls.store.StartTransaction()
-	if err != nil {
+	if err = ls.driver.Create(layer.cacheID, pid, nil); err != nil {
 		return nil, err
 	}
 
